@@ -64,7 +64,7 @@
 #endif
 
 #ifndef DEFAULT_POINT_SIZE
-#define DEFAULT_POINT_SIZE 12
+#define DEFAULT_POINT_SIZE 12.0
 #endif
 
 #ifndef DEFAULT_RESOLUTION
@@ -149,7 +149,7 @@ static int eid = DEFAULT_ENCODING_ID;
 /*
  * Default point size and resolutions.
  */
-static int point_size = DEFAULT_POINT_SIZE;
+static double point_size = DEFAULT_POINT_SIZE;
 static int hres = DEFAULT_RESOLUTION;
 static int vres = DEFAULT_RESOLUTION;
 
@@ -629,13 +629,13 @@ make_xlfd_name(char *name, int name_size, FT_Long awidth, int ismono)
      * Determine the pixel size from the point size and resolution.
      */
     dr = (double) vres;
-    dp = (double) (point_size * 10);
+    dp = (double) (point_size * 10.0);
     val = (unsigned long) (((dp * dr) / 722.7) + 0.5);
 
     /*
      * Set the pixel size, point size, and resolution.
      */
-    sprintf(name, "-%ld-%d-%d-%d", val, point_size * 10, hres, vres);
+    sprintf(name, "-%ld-%d-%d-%d", val, (int)(point_size * 10.0), hres, vres);
     name += strlen(name);
 
     switch (spacing) {
@@ -993,7 +993,7 @@ generate_font(FILE *out, char *iname, char *oname)
     fprintf(out, "COMMENT\n");
 
     fprintf(out, "FONT %s\n", xlfd);
-    fprintf(out, "SIZE %d %d %d\n", point_size, hres, vres);
+    fprintf(out, "SIZE %d %d %d\n", (int)point_size, hres, vres);
 
     /*
      * Generate the font bounding box.
@@ -1248,7 +1248,7 @@ usage(int eval)
             DEFAULT_PLATFORM_ID);
     printf("-eid id\t\tSet the encoding ID for encoding (default: %d).\n",
             DEFAULT_ENCODING_ID);
-    printf("-p n\t\tSet the point size (default: %dpt).\n",
+    printf("-p n\t\tSet the point size (default: %.4lfpt).\n",
            DEFAULT_POINT_SIZE);
     printf("-r n\t\tSet the horizontal and vertical resolution ");
     printf("(default: %ddpi).\n", DEFAULT_RESOLUTION);
@@ -1353,11 +1353,12 @@ main(int argc, char *argv[])
                      * Set the platform ID.
                      */
                     pid = atoi(argv[0]);
-                } else
+                } else {
                   /*
                    * Set the point size.
                    */
-                  point_size = atoi(argv[0]);
+                  point_size = strtod(argv[0], NULL);
+                }
                 break;
               case 'e': case 'E':
                 if (argv[0][2] == 't' || argv[0][2] == 'T')
@@ -1469,8 +1470,8 @@ main(int argc, char *argv[])
      * Arbitrarily limit the point size to a minimum of 2pt and maximum of
      * 256pt.
      */
-    if (point_size < 2 || point_size > 256) {
-        fprintf(stderr, "%s: invalid point size '%dpt'.\n", prog, point_size);
+    if (point_size < 2.0 || point_size > 256.0) {
+        fprintf(stderr, "%s: invalid point size '%.4lfpt'.\n", prog, point_size);
         exit(1);
     }
 
@@ -1553,7 +1554,7 @@ main(int argc, char *argv[])
          * Set the instance resolution and point size and the relevant
          * metrics.
          */
-        FT_Set_Char_Size(face, 0, point_size * 64, hres, vres);
+        FT_Set_Char_Size(face, 0, (long)(point_size * 64.0), hres, vres);
 
         /*
          * Set the global units per em value for convenience.
