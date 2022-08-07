@@ -152,6 +152,8 @@ static int eid = DEFAULT_ENCODING_ID;
 static double point_size = DEFAULT_POINT_SIZE;
 static int hres = DEFAULT_RESOLUTION;
 static int vres = DEFAULT_RESOLUTION;
+static int bitmap_strike = 0;
+static int use_bitmap_strike = 0;
 
 /*
  * The user supplied foundry name to use in the XLFD name.
@@ -874,12 +876,25 @@ generate_font(FILE *out, char *iname, char *oname)
         /*
          * Adjust the font bounding box.
          */
-        wd = ex - sx;
-        ht = ey - sy;
-        x_off = sx + face->glyph->bitmap_left;
-        y_off = sy + face->glyph->bitmap_top - face->glyph->bitmap.rows;
+        int asc = 0;
+        if (use_bitmap_strike)
+        {
+          wd = face->glyph->bitmap.width;
+          ht = face->glyph->bitmap.rows;
+          x_off = face->glyph->bitmap_left;
+          y_off = face->glyph->bitmap_top - ht;
+          asc = face->glyph->bitmap_top;
+        }
+        else
+        {
+          wd = ex - sx;
+          ht = ey - sy;
+          x_off = sx + face->glyph->bitmap_left;
+          y_off = sy + face->glyph->bitmap_top - face->glyph->bitmap.rows;
+          asc = ht + y_off;
+        }
 
-        bbx.maxas = MAX(bbx.maxas, ht + y_off);
+        bbx.maxas = MAX(bbx.maxas, asc);
         bbx.maxds = MAX(bbx.maxds, -y_off);
         bbx.rbearing = wd + x_off;
         bbx.maxrb = MAX(bbx.maxrb, bbx.rbearing);
@@ -906,26 +921,53 @@ generate_font(FILE *out, char *iname, char *oname)
          */
         eof = fprintf(tmp, "BITMAP\n");
 
-        bp = face->glyph->bitmap.buffer + (sy * face->glyph->bitmap.pitch);
-        for (y = 0; eof != EOF && y < ey - sy; y++) {
-            for (idx = 0, x = 0; eof != EOF && x < ex - sx; x++) {
-                if (x > 0 && (x & 7) == 0) {
-                    /*
-                     * Print the next byte.
-                     */
-                    eof = fprintf(tmp, "%02lX", idx & 0xff);
-                    idx = 0;
-                }
-                if (bp[(x+sx) >> 3] & (0x80 >> ((x+sx) & 7)))
-                  idx |= (0x80 >> (x & 7));
-            }
-            bp += face->glyph->bitmap.pitch;
-            if (eof != EOF)
-              /*
-               * Because of the structure of the loop, the last byte should
-               * always be printed.
-               */
-              fprintf(tmp, "%02lX\n", idx & 0xff);
+        if (use_bitmap_strike)
+        {
+          bp = face->glyph->bitmap.buffer;
+          for (y = 0; eof != EOF && y < face->glyph->bitmap.rows; y++) {
+              for (idx = 0, x = 0; eof != EOF && x < face->glyph->bitmap.width; x++) {
+                  if (x > 0 && (x & 7) == 0) {
+                      /*
+                      * Print the next byte.
+                      */
+                      eof = fprintf(tmp, "%02lX", idx & 0xff);
+                      idx = 0;
+                  }
+                  if (bp[x >> 3] & (0x80 >> (x & 7)))
+                    idx |= (0x80 >> (x & 7));
+              }
+              bp += face->glyph->bitmap.pitch;
+              if (eof != EOF)
+                /*
+                * Because of the structure of the loop, the last byte should
+                * always be printed.
+                */
+                fprintf(tmp, "%02lX\n", idx & 0xff);
+          }
+        }
+        else
+        {
+          bp = face->glyph->bitmap.buffer + (sy * face->glyph->bitmap.pitch);
+          for (y = 0; eof != EOF && y < ey - sy; y++) {
+              for (idx = 0, x = 0; eof != EOF && x < ex - sx; x++) {
+                  if (x > 0 && (x & 7) == 0) {
+                      /*
+                      * Print the next byte.
+                      */
+                      eof = fprintf(tmp, "%02lX", idx & 0xff);
+                      idx = 0;
+                  }
+                  if (bp[(x+sx) >> 3] & (0x80 >> ((x+sx) & 7)))
+                    idx |= (0x80 >> (x & 7));
+              }
+              bp += face->glyph->bitmap.pitch;
+              if (eof != EOF)
+                /*
+                * Because of the structure of the loop, the last byte should
+                * always be printed.
+                */
+                fprintf(tmp, "%02lX\n", idx & 0xff);
+          }
         }
         if (eof != EOF)
           fprintf(tmp, "ENDCHAR\n");
@@ -1250,6 +1292,7 @@ usage(int eval)
             DEFAULT_ENCODING_ID);
     printf("-p n\t\tSet the point size (default: %.4lfpt).\n",
            DEFAULT_POINT_SIZE);
+    printf("-b n\t\tUse the bitmap strike at the specific index (if available)\n");
     printf("-r n\t\tSet the horizontal and vertical resolution ");
     printf("(default: %ddpi).\n", DEFAULT_RESOLUTION);
     printf("-rh n\t\tSet the horizontal resolution ");
@@ -1359,6 +1402,12 @@ main(int argc, char *argv[])
                    */
                   point_size = strtod(argv[0], NULL);
                 }
+                break;
+              case 'b': case 'B':
+                argc--;
+                argv++;
+                bitmap_strike = atoi(argv[0]);
+                use_bitmap_strike = 1;
                 break;
               case 'e': case 'E':
                 if (argv[0][2] == 't' || argv[0][2] == 'T')
@@ -1470,7 +1519,7 @@ main(int argc, char *argv[])
      * Arbitrarily limit the point size to a minimum of 2pt and maximum of
      * 256pt.
      */
-    if (point_size < 2.0 || point_size > 256.0) {
+    if (use_bitmap_strike == 0 && (point_size < 2.0 || point_size > 256.0)) {
         fprintf(stderr, "%s: invalid point size '%.4lfpt'.\n", prog, point_size);
         exit(1);
     }
@@ -1554,7 +1603,14 @@ main(int argc, char *argv[])
          * Set the instance resolution and point size and the relevant
          * metrics.
          */
-        FT_Set_Char_Size(face, 0, (long)(point_size * 64.0), hres, vres);
+        if (use_bitmap_strike)
+        {
+          FT_Select_Size(face, bitmap_strike);
+        }
+        else
+        {
+          FT_Set_Char_Size(face, 0, (int)(point_size * (1 << 6)), hres, vres);
+        }
 
         /*
          * Set the global units per em value for convenience.
