@@ -30,6 +30,7 @@
 #endif
 
 #include <string.h>
+#include <math.h>
 
 #include <ft2build.h>
 #include FT_GLYPH_H
